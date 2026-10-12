@@ -1,0 +1,122 @@
+--- source/d3d8to9_device.cpp.orig	2026-10-12 12:13:03.676607200 +0300
++++ source/d3d8to9_device.cpp	2026-10-12 12:37:08.466649900 +0300
+@@ -5,6 +5,19 @@
+ 
+ #include "d3dx9.hpp"
+ #include "d3d8to9.hpp"
++
++// MSMSpidey dynamic reflections (_mod/loader/msm_reflect.cpp)
++void MSM_OnCreateTexture(IDirect3DTexture9* Tex, UINT Width, UINT Height, DWORD OrigUsage);
++IDirect3DBaseTexture9* MSM_FilterTexture(DWORD Stage, IDirect3DBaseTexture9* Tex);
++void MSM_OnSetRenderTarget(IDirect3DDevice9* Dev);
++void MSM_OnSetViewport(IDirect3DDevice9* Dev, const D3DVIEWPORT9* VP);
++int MSM_BeginDraw(IDirect3DDevice9* Dev, bool FixedFunction, DWORD GameClipPlanes);
++void MSM_SetupPass(IDirect3DDevice9* Dev, int Pass);
++void MSM_EndDraw(IDirect3DDevice9* Dev);
++// reflective draws can take several passes (see msm_reflect.cpp)
++#define MSM_DRAW(CALL) 	{ 		const int MsmPasses = MSM_BeginDraw(ProxyInterface, CurrentVertexShaderHandle == 0 || reinterpret_cast<VertexShaderInfo *>(CurrentVertexShaderHandle << 1)->Shader == nullptr, ClipPlaneRenderState); 		for (int MsmPass = 0; MsmPass < MsmPasses; MsmPass++) 		{ 			MSM_SetupPass(ProxyInterface, MsmPass); 			CALL; 		} 		MSM_EndDraw(ProxyInterface); 	}
++void MSM_OnPresent(IDirect3DDevice9* Dev);
++void MSM_OnReset();
+ #include <regex>
+ #include <assert.h>
+ 
+@@ -213,6 +226,7 @@
+ 	D3DPRESENT_PARAMETERS PresentParams;
+ 	ConvertPresentParameters(*pPresentationParameters, PresentParams);
+ 
++	MSM_OnReset();
+ 	const HRESULT hr = ProxyInterface->Reset(&PresentParams);
+ 
+ 	if (SUCCEEDED(hr))
+@@ -232,6 +246,7 @@
+ {
+ 	UNREFERENCED_PARAMETER(pDirtyRegion);
+ 
++	MSM_OnPresent(ProxyInterface);
+ 	return ProxyInterface->Present(pSourceRect, pDestRect, hDestWindowOverride, nullptr);
+ }
+ HRESULT STDMETHODCALLTYPE Direct3DDevice8::GetBackBuffer(UINT iBackBuffer, D3DBACKBUFFER_TYPE Type, IDirect3DSurface8 **ppBackBuffer)
+@@ -272,6 +287,7 @@
+ 		return D3DERR_INVALIDCALL;
+ 
+ 	*ppTexture = nullptr;
++	const DWORD OrigUsage = Usage;
+ 
+ 	if (Pool == D3DPOOL_DEFAULT)
+ 	{
+@@ -294,6 +310,7 @@
+ 	const HRESULT hr = ProxyInterface->CreateTexture(Width, Height, Levels, Usage, Format, Pool, &TextureInterface, nullptr);
+ 	if (FAILED(hr))
+ 		return hr;
++	MSM_OnCreateTexture(TextureInterface, Width, Height, OrigUsage);
+ 
+ 	*ppTexture = ProxyAddressLookupTable->FindAddress<Direct3DTexture8>(TextureInterface);
+ 
+@@ -602,6 +619,7 @@
+ 		ProxyInterface->SetDepthStencilSurface(nullptr);
+ 	}
+ 
++	MSM_OnSetRenderTarget(ProxyInterface);
+ 	return D3D_OK;
+ }
+ HRESULT STDMETHODCALLTYPE Direct3DDevice8::GetRenderTarget(IDirect3DSurface8 **ppRenderTarget)
+@@ -672,7 +690,10 @@
+ 			return D3DERR_INVALIDCALL;
+ 	}
+ 
+-	return ProxyInterface->SetViewport(pViewport);
++	const HRESULT hr = ProxyInterface->SetViewport(pViewport);
++	if (SUCCEEDED(hr))
++		MSM_OnSetViewport(ProxyInterface, reinterpret_cast<const D3DVIEWPORT9 *>(pViewport));
++	return hr;
+ }
+ HRESULT STDMETHODCALLTYPE Direct3DDevice8::GetViewport(D3DVIEWPORT8 *pViewport)
+ {
+@@ -939,7 +960,7 @@
+ HRESULT STDMETHODCALLTYPE Direct3DDevice8::SetTexture(DWORD Stage, IDirect3DBaseTexture8 *pTexture)
+ {
+ 	if (pTexture == nullptr)
+-		return ProxyInterface->SetTexture(Stage, nullptr);
++		return ProxyInterface->SetTexture(Stage, MSM_FilterTexture(Stage, nullptr));
+ 
+ 	IDirect3DBaseTexture9 *BaseTextureInterface;
+ 
+@@ -958,7 +979,7 @@
+ 		return D3DERR_INVALIDCALL;
+ 	}
+ 
+-	return ProxyInterface->SetTexture(Stage, BaseTextureInterface);
++	return ProxyInterface->SetTexture(Stage, MSM_FilterTexture(Stage, BaseTextureInterface));
+ }
+ HRESULT STDMETHODCALLTYPE Direct3DDevice8::GetTextureStageState(DWORD Stage, D3DTEXTURESTAGESTATETYPE Type, DWORD *pValue)
+ {
+@@ -1122,25 +1143,25 @@
+ HRESULT STDMETHODCALLTYPE Direct3DDevice8::DrawPrimitive(D3DPRIMITIVETYPE PrimitiveType, UINT StartVertex, UINT PrimitiveCount)
+ {
+ 	ApplyClipPlanes();
+-	ProxyInterface->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
++	MSM_DRAW(ProxyInterface->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount))
+ 	return D3D_OK;
+ }
+ HRESULT STDMETHODCALLTYPE Direct3DDevice8::DrawIndexedPrimitive(D3DPRIMITIVETYPE PrimitiveType, UINT MinIndex, UINT NumVertices, UINT StartIndex, UINT PrimitiveCount)
+ {
+ 	ApplyClipPlanes();
+-	ProxyInterface->DrawIndexedPrimitive(PrimitiveType, CurrentBaseVertexIndex, MinIndex, NumVertices, StartIndex, PrimitiveCount);
++	MSM_DRAW(ProxyInterface->DrawIndexedPrimitive(PrimitiveType, CurrentBaseVertexIndex, MinIndex, NumVertices, StartIndex, PrimitiveCount))
+ 	return D3D_OK;
+ }
+ HRESULT STDMETHODCALLTYPE Direct3DDevice8::DrawPrimitiveUP(D3DPRIMITIVETYPE PrimitiveType, UINT PrimitiveCount, const void *pVertexStreamZeroData, UINT VertexStreamZeroStride)
+ {
+ 	ApplyClipPlanes();
+-	ProxyInterface->DrawPrimitiveUP(PrimitiveType, PrimitiveCount, pVertexStreamZeroData, VertexStreamZeroStride);
++	MSM_DRAW(ProxyInterface->DrawPrimitiveUP(PrimitiveType, PrimitiveCount, pVertexStreamZeroData, VertexStreamZeroStride))
+ 	return D3D_OK;
+ }
+ HRESULT STDMETHODCALLTYPE Direct3DDevice8::DrawIndexedPrimitiveUP(D3DPRIMITIVETYPE PrimitiveType, UINT MinVertexIndex, UINT NumVertexIndices, UINT PrimitiveCount, const void *pIndexData, D3DFORMAT IndexDataFormat, const void *pVertexStreamZeroData, UINT VertexStreamZeroStride)
+ {
+ 	ApplyClipPlanes();
+-	ProxyInterface->DrawIndexedPrimitiveUP(PrimitiveType, MinVertexIndex, NumVertexIndices, PrimitiveCount, pIndexData, IndexDataFormat, pVertexStreamZeroData, VertexStreamZeroStride);
++	MSM_DRAW(ProxyInterface->DrawIndexedPrimitiveUP(PrimitiveType, MinVertexIndex, NumVertexIndices, PrimitiveCount, pIndexData, IndexDataFormat, pVertexStreamZeroData, VertexStreamZeroStride))
+ 	return D3D_OK;
+ }
+ HRESULT STDMETHODCALLTYPE Direct3DDevice8::ProcessVertices(UINT SrcStartIndex, UINT DestIndex, UINT VertexCount, IDirect3DVertexBuffer8 *pDestBuffer, DWORD Flags)
