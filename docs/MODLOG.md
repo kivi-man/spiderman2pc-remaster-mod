@@ -89,16 +89,3 @@
   its pre-change copy is saved as `System/d3d8.pre-texture-fallback.dll`. The new DLL is staged at `_mod/loader/d3d8.dll`.
 - Runtime verification is pending until the game is closed and the staged DLL can be installed.
 
-## Raimi suit format research and model extraction (2026-10-12)
-- Investigated the user-provided `msmraimimod.suit` using primary Overstrike/ALERT source and the actual file.
-  `info.txt` is a binary index of 112 21-byte records, not a text description. No extra encryption was required.
-- Added `_mod/tools/inspect_suit.py` (standard-library Python). It validates index bounds, streams the ZIP
-  payload through EOF/CRC verification, extracts the model matching its path hash, and parses its DAT1 skeleton.
-- Extracted `_mod/work/raimi_suit/hero_thegoatthree.model` (18,502,996 bytes). Path hash `A8E153F1DD3C8893`;
-  SHA-256 `7b70f3422166ab535f96c2b438150e02d47295aac23781f007f2eb66a1978420`.
-- Verified 231 joint records with names, hierarchy and finite transforms; exported to `skeleton.json`.
-  Skin batch and skin weight sections are present. Geometry/weights conversion and host rig compatibility
-  are still unverified. No separate source FBX is required to begin further analysis of this supplied model.
-- Full method, reproducible command, queries, exact source commits and remaining work:
-  `_mod/work/raimi_suit/RESEARCH.md`. ALERT provides candidate .model -> ASCII/glTF converters, not run here.
-- Original suit and installed game files were not modified; no game process was closed or restarted.

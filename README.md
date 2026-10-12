@@ -13,10 +13,8 @@ packages and third-party assets are **not** included and must not be added (`.gi
 | Folder | What it is |
 |---|---|
 | `MSMSpidey/Classes` | UnrealScript mod package (`MSMSpidey.u`): movement states, camera, swinging, combat, HUD, English settings screen |
-| `loader/` | `d3d8.dll` loader (d3d8to9 based): dynamic reflections (planar mirror + live cube map), graphics settings, `-ucc=` commandlet runner, `-msmexec=` editor-script runner (PSK / texture import) |
+| `loader/` | `d3d8.dll` loader (d3d8to9 based): dynamic reflections (planar mirror + live cube map), graphics settings, `-ucc=` commandlet runner, `-msmexec=` editor-script runner |
 | `third_party/d3d8to9-msm.patch` | Patch for [crosire/d3d8to9](https://github.com/crosire/d3d8to9) (BSD-2); fetch the upstream source yourself |
-| `pylib/`, `suit_port/` | Tools to convert an Insomniac `.suit` to a UE2 `.ukx` (retarget, DXT1 textures, PSK writer). **Input files are not included** |
-| `optional/` | Pawn class for the Raimi suit (you must build your own `MSMSuit.ukx`) |
 | `tools/`, `docs/` | Build/helper scripts; `AGENT.md` (project guide) and `MODLOG.md` (verified technical log), both in Turkish |
 
 ## Building (summary)
@@ -30,14 +28,6 @@ packages and third-party assets are **not** included and must not be added (`.gi
    `[URL] Class=MSMSpidey.MSMSpideyPawn`.
 
 See `docs/AGENT.md` and `docs/MODLOG.md` for details and pitfalls.
-
-## Raimi suit (experimental, not working)
-
-`suit_port/` can retarget the Marvel's Spider-Man Remastered "Raimi 2007" `.suit` from its 231-joint skeleton
-onto the game's 77-bone skeleton (`retarget.py`) and import it as PSK -> `.ukx`. Geometry, textures and skin
-weights render correctly in game. **Known issue:** the game's animations are not applied to the imported mesh
-(it stays in its T-pose). The root cause has not been found; findings are in `docs/MODLOG.md` and
-`suit_port/RESEARCH.md`.
 
 ## License
 
