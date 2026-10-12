@@ -1618,8 +1618,8 @@ function OnKO(Pawn T)
 		if (Fighting(V) && VSize(V.Location - T.Location) < 25 * S)
 			return;
 	Focus = FMin(3, Focus + 0.5);
-	Hint("SUC ONLENDI!", 2.5);
-	AddComic("SUC ONLENDI!", T.Location + vect(0,0,160), 1.4, 255, 255, 255);
+	Hint("CRIME PREVENTED!", 2.5);
+	AddComic("CRIME PREVENTED!", T.Location + vect(0,0,160), 1.4, 255, 255, 255);
 }
 
 function ShootWeb()
@@ -1702,7 +1702,7 @@ function DoFinisher()
 
 	if (Focus < 1)
 	{
-		Hint("Odak yetersiz!", 1);
+		Hint("Not enough focus!", 1);
 		return;
 	}
 	Target = FindEnemy(CamFlatFwd, 7 * S, false);

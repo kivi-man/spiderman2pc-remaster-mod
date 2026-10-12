@@ -1,8 +1,7 @@
 // The MSM settings page: replaces the stock video and controls pages (see MSMGUIController).
 // Tabs: display, graphics, camera & mouse, keys, reflections. Values are read when the page
-// opens and applied with "UYGULA"; key bindings are saved as soon as a key is pressed.
-// The game's fonts have no Turkish letters, so texts are written without them (like the
-// stock localisation).
+// opens and applied with "APPLY"; key bindings are saved as soon as a key is pressed.
+// All texts are plain ASCII English (the stock localisation of this game uses ASCII only).
 class MSMPageSettings extends WebheadGUIPage;
 
 const KIND_CHOICE = 0;
@@ -205,72 +204,72 @@ function BuildPage()
 	TabLine.bAcceptsInput = false;
 	AppendComponent(TabLine);
 
-	Title = NewLabel("AYARLAR", 0.09, 0.075, 0.5, 0.05, AccentColor, false, "FontWHButton");
+	Title = NewLabel("SETTINGS", 0.09, 0.075, 0.5, 0.05, AccentColor, false, "FontWHButton");
 
-	TabName[0] = "GORUNTU";
-	TabName[1] = "GRAFIK";
-	TabName[2] = "KAMERA VE FARE";
-	TabName[3] = "TUSLAR";
-	TabName[4] = "YANSIMALAR";
+	TabName[0] = "DISPLAY";
+	TabName[1] = "GRAPHICS";
+	TabName[2] = "CAMERA AND MOUSE";
+	TabName[3] = "KEYS";
+	TabName[4] = "REFLECTIONS";
 	for (i = 0; i < NUM_TABS; i++)
 		TabBtn[i] = NewButton(TabName[i], 0.09 + i * 0.165, 0.14, 0.155, 0.05);
 
 	// display
-	AddChoice(TAB_DISPLAY, 0, "res", "Cozunurluk", ResolutionOptions());
-	AddChoice(TAB_DISPLAY, 1, "mode", "Ekran modu", "Pencere|Tam ekran");
-	AddChoice(TAB_DISPLAY, 2, "vsync", "Dikey senkron (VSync)", "Kapali|Acik");
-	AddChoice(TAB_DISPLAY, 3, "fps", "Kare hizi siniri", "Sinirsiz|30|60|75|120|144|165|240");
-	AddSlider(TAB_DISPLAY, 4, "fov", "Gorus alani (FOV)", 50, 90, 1);
+	AddChoice(TAB_DISPLAY, 0, "res", "Resolution", ResolutionOptions());
+	AddChoice(TAB_DISPLAY, 1, "mode", "Display mode", "Windowed|Fullscreen");
+	AddChoice(TAB_DISPLAY, 2, "vsync", "Vertical sync (VSync)", "Off|On");
+	AddChoice(TAB_DISPLAY, 3, "fps", "Frame rate limit", "Unlimited|30|60|75|120|144|165|240");
+	AddSlider(TAB_DISPLAY, 4, "fov", "Field of view (FOV)", 50, 90, 1);
 	AddSlider(TAB_DISPLAY, 5, "gamma", "Gamma", 0.7, 2.3, 0.05);
-	AddSlider(TAB_DISPLAY, 6, "bright", "Parlaklik", 0.3, 0.8, 0.01);
-	AddSlider(TAB_DISPLAY, 7, "contrast", "Kontrast", 0.2, 0.8, 0.01);
+	AddSlider(TAB_DISPLAY, 6, "bright", "Brightness", 0.3, 0.8, 0.01);
+	AddSlider(TAB_DISPLAY, 7, "contrast", "Contrast", 0.2, 0.8, 0.01);
 
 	// graphics
-	AddChoice(TAB_GRAPHICS, 0, "tex", "Doku detayi", "Dusuk|Normal|Yuksek|Ultra");
-	AddChoice(TAB_GRAPHICS, 1, "world", "Dunya detayi", "Dusuk|Normal|Yuksek");
-	AddChoice(TAB_GRAPHICS, 2, "shadow", "Karakter golgeleri", "Yok|Basit|Detayli");
-	AddChoice(TAB_GRAPHICS, 3, "msaa", "Kenar yumusatma (MSAA)", "Kapali|2x|4x|8x");
-	AddChoice(TAB_GRAPHICS, 4, "aniso", "Anizotropik suzme", "Kapali|2x|4x|8x|16x");
-	AddChoice(TAB_GRAPHICS, 5, "dynlight", "Dinamik isiklar", "Kapali|Acik");
-	AddChoice(TAB_GRAPHICS, 6, "trilinear", "Trilinear suzme", "Kapali|Acik");
-	AddChoice(TAB_GRAPHICS, 7, "detailtex", "Detay dokulari", "Kapali|Acik");
-	AddChoice(TAB_GRAPHICS, 8, "projectors", "Projektorler (isik/golge)", "Kapali|Acik");
-	AddChoice(TAB_GRAPHICS, 9, "decals", "Izler (decal)", "Kapali|Acik");
-	AddChoice(TAB_GRAPHICS, 10, "coronas", "Isik parlamalari", "Kapali|Acik");
+	AddChoice(TAB_GRAPHICS, 0, "tex", "Texture detail", "Low|Normal|High|Ultra");
+	AddChoice(TAB_GRAPHICS, 1, "world", "World detail", "Low|Normal|High");
+	AddChoice(TAB_GRAPHICS, 2, "shadow", "Character shadows", "None|Simple|Detailed");
+	AddChoice(TAB_GRAPHICS, 3, "msaa", "Anti-aliasing (MSAA)", "Off|2x|4x|8x");
+	AddChoice(TAB_GRAPHICS, 4, "aniso", "Anisotropic filtering", "Off|2x|4x|8x|16x");
+	AddChoice(TAB_GRAPHICS, 5, "dynlight", "Dynamic lights", "Off|On");
+	AddChoice(TAB_GRAPHICS, 6, "trilinear", "Trilinear filtering", "Off|On");
+	AddChoice(TAB_GRAPHICS, 7, "detailtex", "Detail textures", "Off|On");
+	AddChoice(TAB_GRAPHICS, 8, "projectors", "Projectors (light/shadow)", "Off|On");
+	AddChoice(TAB_GRAPHICS, 9, "decals", "Decals", "Off|On");
+	AddChoice(TAB_GRAPHICS, 10, "coronas", "Light coronas", "Off|On");
 
 	// camera and mouse
-	AddSlider(TAB_CAMERA, 0, "mousesens", "Fare hassasiyeti", 0.5, 15, 0.5);
-	AddSlider(TAB_CAMERA, 1, "lookspeed", "Kamera donus hizi", 0.25, 3, 0.05);
-	AddChoice(TAB_CAMERA, 2, "invert", "Fareyi ters cevir", "Kapali|Acik");
-	AddChoice(TAB_CAMERA, 3, "smooth", "Fare yumusatma", "Kapali|Acik");
-	AddSlider(TAB_CAMERA, 4, "camdist", "Kamera mesafesi", 0.6, 1.6, 0.05);
-	AddChoice(TAB_CAMERA, 5, "shake", "Kamera sarsintisi", "Kapali|Az|Normal|Cok");
-	AddChoice(TAB_CAMERA, 6, "autocam", "Otomatik kamera (hareket)", "Kapali|Acik");
+	AddSlider(TAB_CAMERA, 0, "mousesens", "Mouse sensitivity", 0.5, 15, 0.5);
+	AddSlider(TAB_CAMERA, 1, "lookspeed", "Camera turn speed", 0.25, 3, 0.05);
+	AddChoice(TAB_CAMERA, 2, "invert", "Invert mouse", "Off|On");
+	AddChoice(TAB_CAMERA, 3, "smooth", "Mouse smoothing", "Off|On");
+	AddSlider(TAB_CAMERA, 4, "camdist", "Camera distance", 0.6, 1.6, 0.05);
+	AddChoice(TAB_CAMERA, 5, "shake", "Camera shake", "Off|Low|Normal|High");
+	AddChoice(TAB_CAMERA, 6, "autocam", "Auto camera (movement)", "Off|On");
 
 	// keys
-	AddKey(0, "MoveForward", "Ileri");
-	AddKey(1, "MoveBackward", "Geri");
-	AddKey(2, "StrafeLeft", "Sol");
-	AddKey(3, "StrafeRight", "Sag");
-	AddKey(4, "MSMSwing", "Sallan / parkur / duvar kosusu");
-	AddKey(5, "MSMJump", "Zipla / birak");
-	AddKey(6, "MSMAttack", "Saldiri");
-	AddKey(7, "MSMWeb", "Ag atisi / cekme");
-	AddKey(8, "MSMDodge", "Kacinma / dalis");
-	AddKey(9, "MSMZip", "Ag zip");
-	AddKey(10, "MSMPerch", "Nokta firlatma");
-	AddKey(11, "MSMFinisher", "Bitirici");
-	AddKey(12, "MSMUse", "Eski baglam eylemi");
-	AddKey(13, "ShowStatus", "Durum ekrani");
+	AddKey(0, "MoveForward", "Forward");
+	AddKey(1, "MoveBackward", "Backward");
+	AddKey(2, "StrafeLeft", "Strafe left");
+	AddKey(3, "StrafeRight", "Strafe right");
+	AddKey(4, "MSMSwing", "Swing / parkour / wall run");
+	AddKey(5, "MSMJump", "Jump / release");
+	AddKey(6, "MSMAttack", "Attack");
+	AddKey(7, "MSMWeb", "Web shot / pull");
+	AddKey(8, "MSMDodge", "Dodge / dive");
+	AddKey(9, "MSMZip", "Web zip");
+	AddKey(10, "MSMPerch", "Point launch");
+	AddKey(11, "MSMFinisher", "Finisher");
+	AddKey(12, "MSMUse", "Legacy context action");
+	AddKey(13, "ShowStatus", "Status screen");
 
 	// reflections
-	AddChoice(TAB_REFLECT, 0, "refl", "Canli yansimalar", "Kapali|Acik");
-	AddChoice(TAB_REFLECT, 1, "mirror", "Ayna yansimasi (yakin cephe)", "Kapali|Acik");
+	AddChoice(TAB_REFLECT, 0, "refl", "Live reflections", "Off|On");
+	AddChoice(TAB_REFLECT, 1, "mirror", "Mirror reflection (nearby facades)", "Off|On");
 
 	Note = NewLabel("", 0.10, 0.79, 0.80, 0.04, DimColor);
-	BtnBack = NewButton("GERI", 0.09, 0.85, 0.16, 0.05);
-	BtnReset = NewButton("VARSAYILAN", 0.42, 0.85, 0.18, 0.05);
-	BtnApply = NewButton("UYGULA", 0.75, 0.85, 0.16, 0.05);
+	BtnBack = NewButton("BACK", 0.09, 0.85, 0.16, 0.05);
+	BtnReset = NewButton("DEFAULTS", 0.42, 0.85, 0.18, 0.05);
+	BtnApply = NewButton("APPLY", 0.75, 0.85, 0.16, 0.05);
 	bBuilt = true;
 	ShowTab(TAB_DISPLAY);
 }
@@ -609,22 +608,22 @@ function string ShowKey(string Name)
 {
 	switch (Name)
 	{
-		case "": return "(atanmamis)";
-		case "LeftMouse": return "Sol tik";
-		case "RightMouse": return "Sag tik";
-		case "MiddleMouse": return "Orta tik";
-		case "MouseWheelUp": return "Tekerlek yukari";
-		case "MouseWheelDown": return "Tekerlek asagi";
-		case "Space": return "Bosluk";
+		case "": return "(unbound)";
+		case "LeftMouse": return "Left click";
+		case "RightMouse": return "Right click";
+		case "MiddleMouse": return "Middle click";
+		case "MouseWheelUp": return "Wheel up";
+		case "MouseWheelDown": return "Wheel down";
+		case "Space": return "Space";
 		case "Shift": return "Shift";
 		case "Ctrl": return "Ctrl";
 		case "Alt": return "Alt";
 		case "Tab": return "Tab";
 		case "Enter": return "Enter";
-		case "Up": return "Yukari ok";
-		case "Down": return "Asagi ok";
-		case "Left": return "Sol ok";
-		case "Right": return "Sag ok";
+		case "Up": return "Up arrow";
+		case "Down": return "Down arrow";
+		case "Left": return "Left arrow";
+		case "Right": return "Right arrow";
 	}
 	return Caps(Name);
 }
@@ -656,7 +655,7 @@ function BindKey(int Row, string Name)
 	for (i = 0; i < Rows.Length; i++)
 		if (Rows[i].Kind == KIND_KEY)
 			GUIButton(Rows[i].Ctl).Caption = ShowKey(Rows[i].KeyName);
-	Note.Caption = Rows[Row].Lbl.Caption $ ": " $ ShowKey(Name) $ " (kaydedildi)";
+	Note.Caption = Rows[Row].Lbl.Caption $ ": " $ ShowKey(Name) $ " (saved)";
 }
 
 function bool ButtonKeyEvent(out byte Key, out byte State, float Delta)
@@ -672,7 +671,7 @@ function bool ButtonKeyEvent(out byte Key, out byte State, float Delta)
 	if (Key == 27 || Name ~= "Escape")
 	{
 		GUIButton(Rows[PollRow].Ctl).Caption = ShowKey(Rows[PollRow].KeyName);
-		Note.Caption = "Iptal edildi.";
+		Note.Caption = "Cancelled.";
 	}
 	else if (Name != "")
 		BindKey(PollRow, Name);
@@ -710,11 +709,11 @@ function ShowTab(int T)
 	}
 	switch (T)
 	{
-		case TAB_DISPLAY: Note.Caption = "Sol tik: sonraki secenek, sag tik: onceki. Degisiklikler UYGULA ile gecerli olur."; break;
-		case TAB_GRAPHICS: Note.Caption = "MSAA ve VSync uygulandiginda ekran bir an yeniden kurulur."; break;
-		case TAB_CAMERA: Note.Caption = "Kamera ayarlari Marvel's Spider-Man kamerasina uygulanir."; break;
-		case TAB_KEYS: Note.Caption = "Bir eyleme tikla, sonra yeni tusa bas (Esc: iptal). Tuslar hemen kaydedilir."; break;
-		case TAB_REFLECT: Note.Caption = "Canli yansimalar kapatilirsa oyunun eski sabit yansimalari kullanilir."; break;
+		case TAB_DISPLAY: Note.Caption = "Left click: next option, right click: previous. Changes take effect with APPLY."; break;
+		case TAB_GRAPHICS: Note.Caption = "The screen is briefly re-created when MSAA or VSync is applied."; break;
+		case TAB_CAMERA: Note.Caption = "Camera settings apply to the Marvel's Spider-Man style camera."; break;
+		case TAB_KEYS: Note.Caption = "Click an action, then press the new key (Esc: cancel). Keys are saved immediately."; break;
+		case TAB_REFLECT: Note.Caption = "If live reflections are off, the game's old static reflections are used."; break;
 	}
 }
 
@@ -770,8 +769,8 @@ function bool ButtonClick(GUIComponent Sender)
 		if (PollRow >= 0)
 			GUIButton(Rows[PollRow].Ctl).Caption = ShowKey(Rows[PollRow].KeyName);
 		PollRow = i;
-		GUIButton(Sender).Caption = "... bir tusa bas ...";
-		Note.Caption = Rows[i].Lbl.Caption $ " icin yeni tusa bas (Esc: iptal).";
+		GUIButton(Sender).Caption = "... press a key ...";
+		Note.Caption = Rows[i].Lbl.Caption $ " - press the new key (Esc: cancel).";
 	}
 	return true;
 }
@@ -856,14 +855,14 @@ function ResetTab()
 			BindKey(FindKeyRow("MSMFinisher"), "F");
 			BindKey(FindKeyRow("MSMUse"), "R");
 			BindKey(FindKeyRow("ShowStatus"), "Tab");
-			Note.Caption = "Varsayilan tuslar geri yuklendi.";
+			Note.Caption = "Default keys restored.";
 			return;
 		case TAB_REFLECT:
 			SetChoice("refl", 1);
 			SetChoice("mirror", 1);
 			break;
 	}
-	Note.Caption = "Varsayilanlar secildi; kaydetmek icin UYGULA.";
+	Note.Caption = "Defaults selected; press APPLY to save.";
 }
 
 function int FindKeyRow(string Alias)
@@ -984,7 +983,7 @@ function ApplyAll()
 	}
 
 	LoadValues();
-	Note.Caption = "Ayarlar uygulandi ve kaydedildi.";
+	Note.Caption = "Settings applied and saved.";
 }
 
 defaultproperties
