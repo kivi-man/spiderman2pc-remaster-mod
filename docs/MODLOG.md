@@ -89,3 +89,16 @@
   its pre-change copy is saved as `System/d3d8.pre-texture-fallback.dll`. The new DLL is staged at `_mod/loader/d3d8.dll`.
 - Runtime verification is pending until the game is closed and the staged DLL can be installed.
 
+## Modern GPU graphics options (2026-10-18)
+- `_mod/loader/msm_graphics.cpp` (+ `msm_postfx.hlsl` -> `msm_postfx_ps.h`, built with fxc `/T ps_2_b`): refresh rate (desktop rate by default;
+  D3D picks the display default, often 60 Hz, when none is asked for), borderless fullscreen (fullscreen request -> windowed device on a
+  WS_POPUP window), adapter override (`Adapter` in MSMSpidey.ini, adapters are listed in ModLoader.log), auto frame cap (Hz-3, VSync off),
+  texture LOD bias, MSAA re-enabled (was hard-disabled by `kMsaaEnabled`), post pass (FXAA + unsharp sharpening + gamma ramp via 256x1 LUT).
+- The post pass runs in `Direct3DDevice8::Present` (`MSM_PostFX`), copies the back buffer to a render-target texture, draws a fullscreen quad
+  back onto it and restores the state with a D3DSBT_ALL state block + render target/depth. The game's `SetGammaRamp` is swallowed when the
+  device is windowed/borderless (modern drivers ignore it there) and applied by the shader instead.
+- `Webhead.exe` is now Large Address Aware (`_mod/tools/patch_laa.py`, backup `System/Webhead.exe.orig`): 4 GB address space for MSAA / big textures.
+- `_mod/tools/prefer_dgpu.ps1`: optional, sets the Windows "high performance GPU" preference for hybrid laptops (not run automatically).
+- Not done: render scale / supersampling (the engine's viewport, cursor and UI all assume back buffer == window size), D3D9Ex/FlipEx (the
+  wrapper is built on `Direct3DCreate9`, FlipEx excludes MSAA/COPY), HDR output. DXVK can be dropped in as `d3d9.dll` as a compatibility mode.
+- `d3d8to9-msm.patch` now covers both `d3d8to9_device.cpp` and `d3d8to9_base.cpp` (the old one missed the CreateDevice hook).

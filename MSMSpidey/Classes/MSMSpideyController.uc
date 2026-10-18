@@ -38,6 +38,12 @@ var float DebugT;
 var input byte bMSMSwing, bMSMJump, bMSMAttack, bMSMWeb, bMSMDodge, bMSMZip, bMSMPerch, bMSMFinisher;
 
 var bool bMSMActive;
+var float DrawTick;         // draw distance: re-apply to new pawns every 2 s
+var bool bDrawDirty, bMgrInit;
+var float DrawAppliedScale;  // scale the map actors were last stretched by
+var int DrawTries;
+var float Mgr[24];           // stock manager values: ped spawn min/max, ped fade min/max, veh spawn min/max, veh fade min/max, max ped, max veh
+var bool bDebugPending;     // the debug menu opens from the next tick, not inside the key event
 
 // input snapshot (held / pressed / released / previous)
 var bool hSwing, hJump, hAttack, hWeb, hDodge, hZip, hPerch, hFinisher;
@@ -646,6 +652,19 @@ event PlayerTick(float DeltaTime)
 	local int i;
 
 	Super.PlayerTick(DeltaTime);
+
+	if (bDebugPending)
+	{
+		bDebugPending = false;
+		ClientOpenMenu("MSMSpidey.MSMPageDebug");
+	}
+
+	DrawTick += DeltaTime;
+	if (DrawTick > 1.0 && (bDrawDirty || DrawTick > 2.0))
+	{
+		DrawTick = 0;
+		ApplyDrawDistance(bDrawDirty);
+	}
 
 	if (HudInt == None && Player != None && Player.InteractionMaster != None)
 		HudInt = Player.InteractionMaster.AddInteraction("MSMSpidey.MSMHud", Player);
@@ -2769,6 +2788,200 @@ function SettingsChanged()
 {
 	if (!class'MSMSettings'.default.bMirror)
 		bReflPlane = false;
+	bDrawDirty = true;
+}
+
+//-----------------------------------------------------------------------------
+// Draw distance: how far NPCs, vehicles and other models stay in the world.
+// Two things make them vanish: the render cull distance of the actor (Actor.CullDistance) and the radius around the
+// player in which the game's pedestrian / vehicle manager keeps them alive (PedestrianFadeRadius ...).
+// Both are stretched by the "Draw distance" setting; the stock values come from the class defaults.
+
+function float CrowdScale()
+{
+	switch (class'MSMSettings'.default.CrowdDensity)
+	{
+		case 0: return 1.0;
+		case 1: return 2.0;
+		case 2: return 5.0;
+		case 3: return 10.0;
+	}
+	return 20.0;
+}
+
+function float DrawDistanceScale()
+{
+	switch (class'MSMSettings'.default.DrawDistance)
+	{
+		case 0: return 1.0;
+		case 1: return 1.5;
+		case 2: return 2.0;
+		case 3: return 3.0;
+	}
+	return 5.0;
+}
+
+// "(Min=800.000000,Max=4800.000000)" -> the number after Key
+function float RangePart(string R, string Key)
+{
+	local int P, E;
+	local string T;
+
+	P = InStr(R, Key $ "=");
+	if (P < 0)
+		return 0;
+	T = Mid(R, P + Len(Key) + 1);
+	E = InStr(T, ",");
+	if (E < 0)
+		E = InStr(T, ")");
+	if (E >= 0)
+		T = Left(T, E);
+	return float(T);
+}
+
+function SetRange(Actor A, string Prop, float Min, float Max)
+{
+	A.SetPropertyText(Prop, "(Min=" $ Min $ ",Max=" $ Max $ ")");
+}
+
+// the pedestrian / vehicle manager (TrackNodeManager): the radii are ranges, the stock values are kept the first time.
+// Spawn = where new ones appear around the player, Fade = where they are removed. The crowd setting multiplies how many
+// of them live at once (and how many appear per spawn round, and how soon), the draw distance setting the radii.
+function ScaleManager(Actor A, float S)
+{
+	local string R;
+	local float C;
+
+	C = CrowdScale();
+	if (!bMgrInit)
+	{
+		R = A.GetPropertyText("PedestrianSpawnRadius"); Mgr[0] = RangePart(R, "Min"); Mgr[1] = RangePart(R, "Max");
+		R = A.GetPropertyText("PedestrianFadeRadius"); Mgr[2] = RangePart(R, "Min"); Mgr[3] = RangePart(R, "Max");
+		R = A.GetPropertyText("VehicleSpawnRadius"); Mgr[4] = RangePart(R, "Min"); Mgr[5] = RangePart(R, "Max");
+		R = A.GetPropertyText("VehicleFadeRadius"); Mgr[6] = RangePart(R, "Min"); Mgr[7] = RangePart(R, "Max");
+		Mgr[8] = float(A.GetPropertyText("MaxPedestrians"));
+		Mgr[9] = float(A.GetPropertyText("MaxVehicles"));
+		Mgr[10] = float(A.GetPropertyText("LowEndMaxPedestrians"));
+		Mgr[11] = float(A.GetPropertyText("LowEndMaxVehicles"));
+		// per spawn round: how many at once and how long to wait (ranges)
+		R = A.GetPropertyText("PedestrianSpawnCount"); Mgr[12] = RangePart(R, "Min"); Mgr[13] = RangePart(R, "Max");
+		R = A.GetPropertyText("VehicleSpawnCount"); Mgr[14] = RangePart(R, "Min"); Mgr[15] = RangePart(R, "Max");
+		R = A.GetPropertyText("PedestrianSpawnWait"); Mgr[16] = RangePart(R, "Min"); Mgr[17] = RangePart(R, "Max");
+		R = A.GetPropertyText("VehicleSpawnWait"); Mgr[18] = RangePart(R, "Min"); Mgr[19] = RangePart(R, "Max");
+		Mgr[20] = float(A.GetPropertyText("MinPedestrianSeparation"));
+		Mgr[21] = float(A.GetPropertyText("MinVehicleSeparation"));
+		bMgrInit = true;
+	}
+	if (Mgr[3] > 0)
+	{
+		SetRange(A, "PedestrianSpawnRadius", Mgr[0], Mgr[1] * S);
+		SetRange(A, "PedestrianFadeRadius", Mgr[2] * S, Mgr[3] * S);
+		A.SetPropertyText("MaxPedestrians", string(int(Mgr[8] * C)));
+		A.SetPropertyText("LowEndMaxPedestrians", string(int(Mgr[10] * C)));
+		if (Mgr[13] > 0)
+			SetRange(A, "PedestrianSpawnCount", Mgr[12] * C, Mgr[13] * C);
+		if (Mgr[17] > 0)
+			SetRange(A, "PedestrianSpawnWait", FMax(0.05, Mgr[16] / C), FMax(0.1, Mgr[17] / C));
+		if (Mgr[20] > 0)
+			A.SetPropertyText("MinPedestrianSeparation", string(Mgr[20] / FMax(1.0, Sqrt(C))));
+	}
+	if (Mgr[7] > 0)
+	{
+		SetRange(A, "VehicleSpawnRadius", Mgr[4], Mgr[5] * S);
+		SetRange(A, "VehicleFadeRadius", Mgr[6] * S, Mgr[7] * S);
+		A.SetPropertyText("MaxVehicles", string(int(Mgr[9] * C)));
+		A.SetPropertyText("LowEndMaxVehicles", string(int(Mgr[11] * C)));
+		if (Mgr[15] > 0)
+			SetRange(A, "VehicleSpawnCount", Mgr[14] * C, Mgr[15] * C);
+		if (Mgr[19] > 0)
+			SetRange(A, "VehicleSpawnWait", FMax(0.05, Mgr[18] / C), FMax(0.1, Mgr[19] / C));
+		if (Mgr[21] > 0)
+			A.SetPropertyText("MinVehicleSeparation", string(Mgr[21] / FMax(1.0, Sqrt(C))));
+	}
+}
+
+// Debug: what the draw distance code sees (written to the log as MSMDBG lines)
+exec function MSMDrawInfo()
+{
+	local Actor A;
+	local Pawn P;
+	local int nAct, nCull, nMgr, nPawn, nShown;
+	local string Seen, M;
+
+	foreach AllActors(class'Actor', A)
+	{
+		nAct++;
+		if (A.CullDistance > 0)
+		{
+			nCull++;
+			if (InStr(Seen, "|" $ A.Class.Name $ "|") < 0 && nShown < 40)
+			{
+				Seen = Seen $ "|" $ A.Class.Name $ "|";
+				nShown++;
+				Log("MSMDBG cull " $ A.Class.Name $ " cull=" $ A.CullDistance $ " default=" $ A.default.CullDistance);
+			}
+		}
+		M = A.GetPropertyText("PedestrianFadeRadius");
+		if (M != "" || A.GetPropertyText("VehicleFadeRadius") != "" || A.GetPropertyText("PedestrianSpawnRadius") != "")
+		{
+			nMgr++;
+			Log("MSMDBG manager " $ A.Class.Name $ " pedFade=" $ M $ " pedSpawn=" $ A.GetPropertyText("PedestrianSpawnRadius") $ " vehFade=" $ A.GetPropertyText("VehicleFadeRadius") $ " vehSpawn=" $ A.GetPropertyText("VehicleSpawnRadius") $ " maxPed=" $ A.GetPropertyText("MaxPedestrians") $ " maxVeh=" $ A.GetPropertyText("MaxVehicles")
+				$ " pedCount=" $ A.GetPropertyText("PedestrianSpawnCount") $ " vehCount=" $ A.GetPropertyText("VehicleSpawnCount")
+				$ " pedWait=" $ A.GetPropertyText("PedestrianSpawnWait") $ " vehWait=" $ A.GetPropertyText("VehicleSpawnWait")
+				$ " pedSep=" $ A.GetPropertyText("MinPedestrianSeparation") $ " vehSep=" $ A.GetPropertyText("MinVehicleSeparation")
+				$ " lowPed=" $ A.GetPropertyText("LowEndMaxPedestrians") $ " lowVeh=" $ A.GetPropertyText("LowEndMaxVehicles"));
+		}
+	}
+	foreach AllActors(class'Pawn', P)
+	{
+		nPawn++;
+		if (nPawn <= 12)
+			Log("MSMDBG pawn " $ P.Class.Name $ " cull=" $ P.CullDistance $ " default=" $ P.default.CullDistance $ " dist=" $ int(VSize(P.Location - Pawn.Location)));
+	}
+	Log("MSMDBG drawinfo actors=" $ nAct $ " withCull=" $ nCull $ " managers=" $ nMgr $ " pawns=" $ nPawn $ " scale=" $ DrawDistanceScale() $ " mgrInit=" $ bMgrInit);
+	ClientMessage("draw info: " $ nAct $ " actors, " $ nCull $ " with a cull distance, " $ nMgr $ " managers, " $ nPawn $ " pawns");
+}
+
+function ApplyDrawDistance(bool bAll)
+{
+	local Actor A;
+	local Pawn P;
+	local float S;
+
+	S = DrawDistanceScale();
+	if (bAll)
+	{
+		// the map is still spawning its actors right after the start: wait for the pedestrian / vehicle manager
+		if (!bMgrInit && DrawTries < 25)
+		{
+			DrawTries++;
+			foreach AllActors(class'Actor', A)
+				if (A.GetPropertyText("PedestrianFadeRadius") != "")
+					break;
+			if (A == None)
+				return;
+		}
+		bDrawDirty = false;
+		foreach AllActors(class'Actor', A)
+		{
+			// stock cull distance comes from the class, or (placed static meshes) from the map: stretch what is set now
+			if (A.CullDistance > 0)
+			{
+				if (A.default.CullDistance > 0)
+					A.CullDistance = A.default.CullDistance * S;
+				else
+					A.CullDistance = A.CullDistance * S / DrawAppliedScale;
+			}
+			if (A.GetPropertyText("PedestrianFadeRadius") != "" || A.GetPropertyText("VehicleFadeRadius") != "")
+				ScaleManager(A, S);
+		}
+		DrawAppliedScale = S;
+		return;
+	}
+	// pawns spawned since the last pass
+	foreach AllActors(class'Pawn', P)
+		if (P.default.CullDistance > 0 && P.CullDistance > 0)
+			P.CullDistance = P.default.CullDistance * S;
 }
 
 // Swap Spider-Man's skeletal mesh at runtime: MSMMesh MSMSuit.RaimiSuit
@@ -3007,6 +3220,12 @@ exec function MSMReflections(bool bOn)
 //-----------------------------------------------------------------------------
 // Extra commands
 
+// Debug menu (bound to Insert in User.ini)
+exec function MSMDebug()
+{
+	bDebugPending = true;
+}
+
 // Old context action (pick up / use / pull) for mission objects: R
 exec function MSMUse()
 {
@@ -3135,6 +3354,8 @@ state PlayerWalking
 defaultproperties
 {
 	LookSensitivity=1.0
+	bDrawDirty=true
+	DrawAppliedScale=1.0
 	bMSMDebug=true
 	bDynamicReflections=true
 	ReflFacesPerFrame=6

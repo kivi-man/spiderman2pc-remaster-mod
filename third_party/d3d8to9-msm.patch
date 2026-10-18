@@ -1,12 +1,13 @@
 --- source/d3d8to9_device.cpp.orig	2026-10-12 12:13:03.676607200 +0300
-+++ source/d3d8to9_device.cpp	2026-10-12 12:37:08.466649900 +0300
-@@ -5,6 +5,19 @@
++++ source/d3d8to9_device.cpp	2026-10-18 17:05:09.212247700 +0300
+@@ -5,6 +5,30 @@
  
  #include "d3dx9.hpp"
  #include "d3d8to9.hpp"
 +
 +// MSMSpidey dynamic reflections (_mod/loader/msm_reflect.cpp)
 +void MSM_OnCreateTexture(IDirect3DTexture9* Tex, UINT Width, UINT Height, DWORD OrigUsage);
++void MSM_RLog(const char* Fmt, ...);
 +IDirect3DBaseTexture9* MSM_FilterTexture(DWORD Stage, IDirect3DBaseTexture9* Tex);
 +void MSM_OnSetRenderTarget(IDirect3DDevice9* Dev);
 +void MSM_OnSetViewport(IDirect3DDevice9* Dev, const D3DVIEWPORT9* VP);
@@ -16,43 +17,118 @@
 +// reflective draws can take several passes (see msm_reflect.cpp)
 +#define MSM_DRAW(CALL) 	{ 		const int MsmPasses = MSM_BeginDraw(ProxyInterface, CurrentVertexShaderHandle == 0 || reinterpret_cast<VertexShaderInfo *>(CurrentVertexShaderHandle << 1)->Shader == nullptr, ClipPlaneRenderState); 		for (int MsmPass = 0; MsmPass < MsmPasses; MsmPass++) 		{ 			MSM_SetupPass(ProxyInterface, MsmPass); 			CALL; 		} 		MSM_EndDraw(ProxyInterface); 	}
 +void MSM_OnPresent(IDirect3DDevice9* Dev);
++void MSM_AdjustPresentParams(IDirect3DDevice9* Dev, D3DPRESENT_PARAMETERS& PP);
++DWORD MSM_SamplerValue(D3DSAMPLERSTATETYPE Type, DWORD Value);
++void MSM_ApplyAnisotropy(IDirect3DDevice9* Dev, DWORD Stage);
++void MSM_FrameLimit();
 +void MSM_OnReset();
++void MSM_GraphicsOnReset();
++void MSM_AfterDeviceReady(IDirect3DDevice9* Dev);
++void MSM_PostFX(IDirect3DDevice9* Dev);
++void MSM_AfterPresent(IDirect3DDevice9* Dev);
++bool MSM_OnSetGammaRamp(const D3DGAMMARAMP* Ramp);
++DWORD MSM_MipBias(DWORD Value);
  #include <regex>
  #include <assert.h>
  
-@@ -213,6 +226,7 @@
+@@ -212,11 +236,15 @@
+ 
  	D3DPRESENT_PARAMETERS PresentParams;
  	ConvertPresentParameters(*pPresentationParameters, PresentParams);
++	MSM_AdjustPresentParams(ProxyInterface, PresentParams);
  
 +	MSM_OnReset();
++	MSM_GraphicsOnReset();
  	const HRESULT hr = ProxyInterface->Reset(&PresentParams);
  
  	if (SUCCEEDED(hr))
-@@ -232,6 +246,7 @@
+ 	{
++		MSM_AfterDeviceReady(ProxyInterface);
+ 		// The default value of D3DRS_POINTSIZE_MIN is 0.0f in D3D8,
+ 		// whereas in D3D9 it is 1.0f, so adjust it as needed
+ 		ProxyInterface->SetRenderState(D3DRS_POINTSIZE_MIN, (DWORD) 0.0f);
+@@ -232,7 +260,12 @@
  {
  	UNREFERENCED_PARAMETER(pDirtyRegion);
  
+-	return ProxyInterface->Present(pSourceRect, pDestRect, hDestWindowOverride, nullptr);
 +	MSM_OnPresent(ProxyInterface);
- 	return ProxyInterface->Present(pSourceRect, pDestRect, hDestWindowOverride, nullptr);
++	MSM_PostFX(ProxyInterface);
++	const HRESULT hr = ProxyInterface->Present(pSourceRect, pDestRect, hDestWindowOverride, nullptr);
++	MSM_AfterPresent(ProxyInterface);
++	MSM_FrameLimit();
++	return hr;
  }
  HRESULT STDMETHODCALLTYPE Direct3DDevice8::GetBackBuffer(UINT iBackBuffer, D3DBACKBUFFER_TYPE Type, IDirect3DSurface8 **ppBackBuffer)
-@@ -272,6 +287,7 @@
+ {
+@@ -257,7 +290,8 @@
+ }
+ void STDMETHODCALLTYPE Direct3DDevice8::SetGammaRamp(DWORD Flags, const D3DGAMMARAMP *pRamp)
+ {
+-	ProxyInterface->SetGammaRamp(0, Flags, pRamp);
++	if (!MSM_OnSetGammaRamp(pRamp))
++		ProxyInterface->SetGammaRamp(0, Flags, pRamp);
+ }
+ void STDMETHODCALLTYPE Direct3DDevice8::GetGammaRamp(D3DGAMMARAMP *pRamp)
+ {
+@@ -272,6 +306,8 @@
  		return D3DERR_INVALIDCALL;
  
  	*ppTexture = nullptr;
 +	const DWORD OrigUsage = Usage;
++	bool bPromotedRenderTarget = false;
  
  	if (Pool == D3DPOOL_DEFAULT)
  	{
-@@ -294,6 +310,7 @@
- 	const HRESULT hr = ProxyInterface->CreateTexture(Width, Height, Levels, Usage, Format, Pool, &TextureInterface, nullptr);
- 	if (FAILED(hr))
+@@ -281,6 +317,7 @@
+ 		if ((Usage & D3DUSAGE_DYNAMIC) == 0 &&
+ 			SUCCEEDED(D3D->GetProxyInterface()->CheckDeviceFormat(CreationParams.AdapterOrdinal, CreationParams.DeviceType, D3DFMT_X8R8G8B8, D3DUSAGE_RENDERTARGET, D3DRTYPE_TEXTURE, Format)))
+ 		{
++			bPromotedRenderTarget = (Usage & D3DUSAGE_RENDERTARGET) == 0;
+ 			Usage |= D3DUSAGE_RENDERTARGET;
+ 		}
+ 		else if (Usage != D3DUSAGE_DEPTHSTENCIL)
+@@ -291,9 +328,37 @@
+ 
+ 	IDirect3DTexture9 *TextureInterface = nullptr;
+ 
+-	const HRESULT hr = ProxyInterface->CreateTexture(Width, Height, Levels, Usage, Format, Pool, &TextureInterface, nullptr);
+-	if (FAILED(hr))
++	HRESULT hr = ProxyInterface->CreateTexture(Width, Height, Levels, Usage, Format, Pool, &TextureInterface, nullptr);
++	if (FAILED(hr) && bPromotedRenderTarget)
++	{
++		// The reflection hook promotes eligible default-pool textures to render targets.
++		// Some game textures still fail with that extra usage flag; retry them with the
++		// normal D3D8-to-D3D9 dynamic-texture mapping. Explicit render targets are untouched.
++		const DWORD FallbackUsage = OrigUsage | D3DUSAGE_DYNAMIC;
++		TextureInterface = nullptr;
++		HRESULT FallbackHr = ProxyInterface->CreateTexture(Width, Height, Levels, FallbackUsage, Format, Pool, &TextureInterface, nullptr);
++		if (SUCCEEDED(FallbackHr))
++		{
++			MSM_RLog("CreateTexture retry succeeded: %ux%u levels=%u format=%d usage=0x%lx -> 0x%lx hr=0x%08lx\n",
++				Width, Height, Levels, (int)Format, Usage, FallbackUsage, (unsigned long)hr);
++			hr = FallbackHr;
++		}
++		else
++		{
++			MSM_RLog("CreateTexture retry failed: %ux%u levels=%u format=%d pool=%d usage=0x%lx -> 0x%lx hr=0x%08lx/0x%08lx\n",
++				Width, Height, Levels, (int)Format, (int)Pool, Usage, FallbackUsage,
++				(unsigned long)hr, (unsigned long)FallbackHr);
++			return hr;
++		}
++	}
++	else if (FAILED(hr))
++	{
++		MSM_RLog("CreateTexture failed: %ux%u levels=%u format=%d pool=%d usage=0x%lx hr=0x%08lx (free texture mem %u MB, device state 0x%08lx)\n",
++			Width, Height, Levels, (int)Format, (int)Pool, Usage, (unsigned long)hr,
++			ProxyInterface->GetAvailableTextureMem() >> 20, (unsigned long)ProxyInterface->TestCooperativeLevel());
  		return hr;
++	}
 +	MSM_OnCreateTexture(TextureInterface, Width, Height, OrigUsage);
  
  	*ppTexture = ProxyAddressLookupTable->FindAddress<Direct3DTexture8>(TextureInterface);
  
-@@ -602,6 +619,7 @@
+@@ -602,6 +667,7 @@
  		ProxyInterface->SetDepthStencilSurface(nullptr);
  	}
  
@@ -60,7 +136,7 @@
  	return D3D_OK;
  }
  HRESULT STDMETHODCALLTYPE Direct3DDevice8::GetRenderTarget(IDirect3DSurface8 **ppRenderTarget)
-@@ -672,7 +690,10 @@
+@@ -672,7 +738,10 @@
  			return D3DERR_INVALIDCALL;
  	}
  
@@ -72,7 +148,7 @@
  }
  HRESULT STDMETHODCALLTYPE Direct3DDevice8::GetViewport(D3DVIEWPORT8 *pViewport)
  {
-@@ -939,7 +960,7 @@
+@@ -939,7 +1008,7 @@
  HRESULT STDMETHODCALLTYPE Direct3DDevice8::SetTexture(DWORD Stage, IDirect3DBaseTexture8 *pTexture)
  {
  	if (pTexture == nullptr)
@@ -81,7 +157,7 @@
  
  	IDirect3DBaseTexture9 *BaseTextureInterface;
  
-@@ -958,7 +979,7 @@
+@@ -958,7 +1027,7 @@
  		return D3DERR_INVALIDCALL;
  	}
  
@@ -90,7 +166,28 @@
  }
  HRESULT STDMETHODCALLTYPE Direct3DDevice8::GetTextureStageState(DWORD Stage, D3DTEXTURESTAGESTATETYPE Type, DWORD *pValue)
  {
-@@ -1122,25 +1143,25 @@
+@@ -1005,15 +1074,18 @@
+ 			Value = D3DTEXF_LINEAR;
+ 		return ProxyInterface->SetSamplerState(Stage, D3DSAMP_MAGFILTER, Value);
+ 	case D3DTSS_MINFILTER:
++		Value = MSM_SamplerValue(D3DSAMP_MINFILTER, Value);
++		if (Value == D3DTEXF_ANISOTROPIC)
++			MSM_ApplyAnisotropy(ProxyInterface, Stage);
+ 		return ProxyInterface->SetSamplerState(Stage, D3DSAMP_MINFILTER, Value);
+ 	case D3DTSS_MIPFILTER:
+ 		return ProxyInterface->SetSamplerState(Stage, D3DSAMP_MIPFILTER, Value);
+ 	case D3DTSS_MIPMAPLODBIAS:
+-		return ProxyInterface->SetSamplerState(Stage, D3DSAMP_MIPMAPLODBIAS, Value);
++		return ProxyInterface->SetSamplerState(Stage, D3DSAMP_MIPMAPLODBIAS, MSM_MipBias(Value));
+ 	case D3DTSS_MAXMIPLEVEL:
+ 		return ProxyInterface->SetSamplerState(Stage, D3DSAMP_MAXMIPLEVEL, Value);
+ 	case D3DTSS_MAXANISOTROPY:
+-		return ProxyInterface->SetSamplerState(Stage, D3DSAMP_MAXANISOTROPY, Value);
++		return ProxyInterface->SetSamplerState(Stage, D3DSAMP_MAXANISOTROPY, MSM_SamplerValue(D3DSAMP_MAXANISOTROPY, Value));
+ 	default:
+ 		return ProxyInterface->SetTextureStageState(Stage, Type, Value);
+ 	}
+@@ -1122,25 +1194,25 @@
  HRESULT STDMETHODCALLTYPE Direct3DDevice8::DrawPrimitive(D3DPRIMITIVETYPE PrimitiveType, UINT StartVertex, UINT PrimitiveCount)
  {
  	ApplyClipPlanes();
@@ -120,3 +217,63 @@
  	return D3D_OK;
  }
  HRESULT STDMETHODCALLTYPE Direct3DDevice8::ProcessVertices(UINT SrcStartIndex, UINT DestIndex, UINT VertexCount, IDirect3DVertexBuffer8 *pDestBuffer, DWORD Flags)
+--- source/d3d8to9_base.cpp.orig	2026-10-12 13:18:38.681229800 +0300
++++ source/d3d8to9_base.cpp	2026-10-18 16:45:10.916900000 +0300
+@@ -166,6 +166,10 @@
+ {
+ 	return ProxyInterface->GetAdapterMonitor(Adapter);
+ }
++void MSM_AdjustPresentParams(IDirect3D9* D3D, UINT Adapter, D3DDEVTYPE Type, D3DPRESENT_PARAMETERS& PP);
++UINT MSM_OnCreateDevice(IDirect3D9* D3D, UINT Adapter);
++void MSM_SetFocusWindow(HWND Wnd);
++void MSM_AfterDeviceReady(IDirect3DDevice9* Dev);
+ HRESULT STDMETHODCALLTYPE Direct3D8::CreateDevice(UINT Adapter, D3DDEVTYPE DeviceType, HWND hFocusWindow, DWORD BehaviorFlags, D3DPRESENT_PARAMETERS8 *pPresentationParameters, IDirect3DDevice8 **ppReturnedDeviceInterface)
+ {
+ #ifndef D3D8TO9NOLOG
+@@ -179,6 +183,9 @@
+ 
+ 	D3DPRESENT_PARAMETERS PresentParams;
+ 	ConvertPresentParameters(*pPresentationParameters, PresentParams);
++	Adapter = MSM_OnCreateDevice(ProxyInterface, Adapter);
++	MSM_SetFocusWindow(hFocusWindow);
++	MSM_AdjustPresentParams(ProxyInterface, Adapter, DeviceType, PresentParams);
+ 
+ 	IDirect3DDevice9 *DeviceInterface = nullptr;
+ 
+@@ -189,6 +196,7 @@
+ 
+ 	*ppReturnedDeviceInterface = new Direct3DDevice8(this, DeviceInterface, BehaviorFlags, PresentParams.EnableAutoDepthStencil ? PresentParams.AutoDepthStencilFormat : D3DFMT_UNKNOWN, (PresentParams.Flags & D3DPRESENTFLAG_DISCARD_DEPTHSTENCIL) != 0);
+ 
++	MSM_AfterDeviceReady(DeviceInterface);
+ 	// Set default vertex declaration
+ 	DeviceInterface->SetFVF(D3DFVF_XYZ);
+ 
+--- source/d3d8to9_surface.cpp.orig	2026-10-18 16:35:51.622153000 +0300
++++ source/d3d8to9_surface.cpp	2026-10-18 16:35:51.678557100 +0300
+@@ -5,6 +5,10 @@
+ 
+ #include "d3d8to9.hpp"
+ 
++// MSMSpidey: multisampled back buffers cannot be locked; reads go through a resolved copy (msm_graphics.cpp)
++HRESULT MSM_LockRectFallback(IDirect3DSurface9* Surf, D3DLOCKED_RECT* Locked, const RECT* Rect, HRESULT Failed);
++bool MSM_UnlockRectFallback(IDirect3DSurface9* Surf);
++
+ Direct3DSurface8::Direct3DSurface8(Direct3DDevice8 *Device, IDirect3DSurface9 *ProxyInterface) :
+ 	Device(Device), ProxyInterface(ProxyInterface)
+ {
+@@ -91,9 +95,14 @@
+ }
+ HRESULT STDMETHODCALLTYPE Direct3DSurface8::LockRect(D3DLOCKED_RECT *pLockedRect, const RECT *pRect, DWORD Flags)
+ {
+-	return ProxyInterface->LockRect(pLockedRect, pRect, Flags);
++	HRESULT hr = ProxyInterface->LockRect(pLockedRect, pRect, Flags);
++	if (FAILED(hr))
++		hr = MSM_LockRectFallback(ProxyInterface, pLockedRect, pRect, hr);
++	return hr;
+ }
+ HRESULT STDMETHODCALLTYPE Direct3DSurface8::UnlockRect()
+ {
++	if (MSM_UnlockRectFallback(ProxyInterface))
++		return D3D_OK;
+ 	return ProxyInterface->UnlockRect();
+ }

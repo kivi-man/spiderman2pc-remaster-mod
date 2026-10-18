@@ -40,8 +40,12 @@ var string TabName[5];
 var int CurTab;
 var GUIImage Panel, TabLine;
 var GUILabel Title, Note;
+var string PageTitle;
+var bool bTightRows;        // 14 rows per tab (the debug page)
 var GUIButton BtnBack, BtnReset, BtnApply;
 var array<string> ResList;
+var string RefreshVals;     // "0|60|..." values the monitor can do
+var string RefreshLabels;
 var int PollRow;            // key row waiting for a key, -1 = none
 var bool bBuilt;
 
@@ -99,10 +103,19 @@ function GUIButton NewButton(string Caption, float X, float Y, float W, float H)
 	return B;
 }
 
-function int RowY(int N, out float Y, out float H)
+function int RowY(int Tab, int N, out float Y, out float H)
 {
-	Y = 0.215 + N * 0.047;
-	H = 0.04;
+	if (Tab == TAB_GRAPHICS || bTightRows)
+	{
+		// 15 rows: tighter so they clear the note line
+		Y = 0.215 + N * 0.0375;
+		H = 0.034;
+	}
+	else
+	{
+		Y = 0.215 + N * 0.047;
+		H = 0.04;
+	}
 	return N;
 }
 
@@ -111,7 +124,7 @@ function AddChoice(int Tab, int N, string Id, string Label, string Opts)
 	local int i;
 	local float Y, H;
 
-	RowY(N, Y, H);
+	RowY(Tab, N, Y, H);
 	i = Rows.Length;
 	Rows.Length = i + 1;
 	Rows[i].Tab = Tab;
@@ -129,7 +142,7 @@ function AddSlider(int Tab, int N, string Id, string Label, float Min, float Max
 	local float Y, H;
 	local GUISlider S;
 
-	RowY(N, Y, H);
+	RowY(Tab, N, Y, H);
 	i = Rows.Length;
 	Rows.Length = i + 1;
 	Rows[i].Tab = Tab;
@@ -170,6 +183,78 @@ function AddKey(int N, string Alias, string Label)
 	Rows[i].Ctl = NewButton("", 0.48, Y, 0.32, H);
 }
 
+function SetTabNames()
+{
+	TabName[0] = "DISPLAY";
+	TabName[1] = "GRAPHICS";
+	TabName[2] = "CAMERA AND MOUSE";
+	TabName[3] = "KEYS";
+	TabName[4] = "REFLECTIONS";
+}
+
+function BuildRows()
+{
+	// display
+	AddChoice(TAB_DISPLAY, 0, "res", "Resolution", ResolutionOptions());
+	AddChoice(TAB_DISPLAY, 1, "mode", "Display mode", "Windowed|Fullscreen|Borderless");
+	BuildRefreshLists();
+	AddChoice(TAB_DISPLAY, 2, "refresh", "Refresh rate (fullscreen)", RefreshLabels);
+	AddChoice(TAB_DISPLAY, 3, "vsync", "Vertical sync (VSync)", "Off|On");
+	AddChoice(TAB_DISPLAY, 4, "fps", "Frame rate limit", "Unlimited|Auto (VRR)|30|60|75|120|144|165|240");
+	AddSlider(TAB_DISPLAY, 5, "fov", "Field of view (FOV)", 50, 90, 1);
+	AddSlider(TAB_DISPLAY, 6, "gamma", "Gamma", 0.7, 2.3, 0.05);
+	AddSlider(TAB_DISPLAY, 7, "bright", "Brightness", 0.3, 0.8, 0.01);
+	AddSlider(TAB_DISPLAY, 8, "contrast", "Contrast", 0.2, 0.8, 0.01);
+	AddChoice(TAB_DISPLAY, 9, "adapter", "Monitor / GPU (needs restart)", "Auto|Adapter 0|Adapter 1|Adapter 2|Adapter 3");
+	AddChoice(TAB_DISPLAY, 10, "crowd", "Crowd (NPCs and vehicles at once)", "Stock|2x|5x|10x|20x");
+
+	// graphics
+	AddChoice(TAB_GRAPHICS, 0, "tex", "Texture detail", "Low|Normal|High|Ultra");
+	AddChoice(TAB_GRAPHICS, 1, "world", "World detail", "Low|Normal|High");
+	AddChoice(TAB_GRAPHICS, 2, "shadow", "Character shadows", "None|Simple|Detailed");
+	AddChoice(TAB_GRAPHICS, 3, "msaa", "Anti-aliasing (MSAA)", "Off|2x|4x|8x");
+	AddChoice(TAB_GRAPHICS, 4, "aniso", "Anisotropic filtering", "Off|2x|4x|8x|16x");
+	AddChoice(TAB_GRAPHICS, 5, "dynlight", "Dynamic lights", "Off|On");
+	AddChoice(TAB_GRAPHICS, 6, "trilinear", "Trilinear filtering", "Off|On");
+	AddChoice(TAB_GRAPHICS, 7, "detailtex", "Detail textures", "Off|On");
+	AddChoice(TAB_GRAPHICS, 8, "projectors", "Projectors (light/shadow)", "Off|On");
+	AddChoice(TAB_GRAPHICS, 9, "decals", "Decals", "Off|On");
+	AddChoice(TAB_GRAPHICS, 10, "coronas", "Light coronas", "Off|On");
+	AddChoice(TAB_GRAPHICS, 11, "postaa", "Post anti-aliasing (FXAA)", "Off|On");
+	AddChoice(TAB_GRAPHICS, 12, "sharpen", "Image sharpening", "Off|Low|Medium|High");
+	AddChoice(TAB_GRAPHICS, 13, "mipbias", "Texture sharpness", "Default|Sharp|Sharper");
+	AddChoice(TAB_GRAPHICS, 14, "drawdist", "Draw distance (NPCs, vehicles, props)", "Stock|1.5x|2x|3x|5x");
+
+	// camera and mouse
+	AddSlider(TAB_CAMERA, 0, "mousesens", "Mouse sensitivity", 0.5, 15, 0.5);
+	AddSlider(TAB_CAMERA, 1, "lookspeed", "Camera turn speed", 0.25, 3, 0.05);
+	AddChoice(TAB_CAMERA, 2, "invert", "Invert mouse", "Off|On");
+	AddChoice(TAB_CAMERA, 3, "smooth", "Mouse smoothing", "Off|On");
+	AddSlider(TAB_CAMERA, 4, "camdist", "Camera distance", 0.6, 1.6, 0.05);
+	AddChoice(TAB_CAMERA, 5, "shake", "Camera shake", "Off|Low|Normal|High");
+	AddChoice(TAB_CAMERA, 6, "autocam", "Auto camera (movement)", "Off|On");
+
+	// keys
+	AddKey(0, "MoveForward", "Forward");
+	AddKey(1, "MoveBackward", "Backward");
+	AddKey(2, "StrafeLeft", "Strafe left");
+	AddKey(3, "StrafeRight", "Strafe right");
+	AddKey(4, "MSMSwing", "Swing / parkour / wall run");
+	AddKey(5, "MSMJump", "Jump / release");
+	AddKey(6, "MSMAttack", "Attack");
+	AddKey(7, "MSMWeb", "Web shot / pull");
+	AddKey(8, "MSMDodge", "Dodge / dive");
+	AddKey(9, "MSMZip", "Web zip");
+	AddKey(10, "MSMPerch", "Point launch");
+	AddKey(11, "MSMFinisher", "Finisher");
+	AddKey(12, "MSMUse", "Legacy context action");
+	AddKey(13, "ShowStatus", "Status screen");
+
+	// reflections
+	AddChoice(TAB_REFLECT, 0, "refl", "Live reflections", "Off|On");
+	AddChoice(TAB_REFLECT, 1, "mirror", "Mirror reflection (nearby facades)", "Off|On");
+}
+
 function BuildPage()
 {
 	local int i;
@@ -204,67 +289,13 @@ function BuildPage()
 	TabLine.bAcceptsInput = false;
 	AppendComponent(TabLine);
 
-	Title = NewLabel("SETTINGS", 0.09, 0.075, 0.5, 0.05, AccentColor, false, "FontWHButton");
+	Title = NewLabel(PageTitle, 0.09, 0.075, 0.5, 0.05, AccentColor, false, "FontWHButton");
 
-	TabName[0] = "DISPLAY";
-	TabName[1] = "GRAPHICS";
-	TabName[2] = "CAMERA AND MOUSE";
-	TabName[3] = "KEYS";
-	TabName[4] = "REFLECTIONS";
+	SetTabNames();
 	for (i = 0; i < NUM_TABS; i++)
 		TabBtn[i] = NewButton(TabName[i], 0.09 + i * 0.165, 0.14, 0.155, 0.05);
 
-	// display
-	AddChoice(TAB_DISPLAY, 0, "res", "Resolution", ResolutionOptions());
-	AddChoice(TAB_DISPLAY, 1, "mode", "Display mode", "Windowed|Fullscreen");
-	AddChoice(TAB_DISPLAY, 2, "vsync", "Vertical sync (VSync)", "Off|On");
-	AddChoice(TAB_DISPLAY, 3, "fps", "Frame rate limit", "Unlimited|30|60|75|120|144|165|240");
-	AddSlider(TAB_DISPLAY, 4, "fov", "Field of view (FOV)", 50, 90, 1);
-	AddSlider(TAB_DISPLAY, 5, "gamma", "Gamma", 0.7, 2.3, 0.05);
-	AddSlider(TAB_DISPLAY, 6, "bright", "Brightness", 0.3, 0.8, 0.01);
-	AddSlider(TAB_DISPLAY, 7, "contrast", "Contrast", 0.2, 0.8, 0.01);
-
-	// graphics
-	AddChoice(TAB_GRAPHICS, 0, "tex", "Texture detail", "Low|Normal|High|Ultra");
-	AddChoice(TAB_GRAPHICS, 1, "world", "World detail", "Low|Normal|High");
-	AddChoice(TAB_GRAPHICS, 2, "shadow", "Character shadows", "None|Simple|Detailed");
-	AddChoice(TAB_GRAPHICS, 3, "msaa", "Anti-aliasing (MSAA)", "Off|2x|4x|8x");
-	AddChoice(TAB_GRAPHICS, 4, "aniso", "Anisotropic filtering", "Off|2x|4x|8x|16x");
-	AddChoice(TAB_GRAPHICS, 5, "dynlight", "Dynamic lights", "Off|On");
-	AddChoice(TAB_GRAPHICS, 6, "trilinear", "Trilinear filtering", "Off|On");
-	AddChoice(TAB_GRAPHICS, 7, "detailtex", "Detail textures", "Off|On");
-	AddChoice(TAB_GRAPHICS, 8, "projectors", "Projectors (light/shadow)", "Off|On");
-	AddChoice(TAB_GRAPHICS, 9, "decals", "Decals", "Off|On");
-	AddChoice(TAB_GRAPHICS, 10, "coronas", "Light coronas", "Off|On");
-
-	// camera and mouse
-	AddSlider(TAB_CAMERA, 0, "mousesens", "Mouse sensitivity", 0.5, 15, 0.5);
-	AddSlider(TAB_CAMERA, 1, "lookspeed", "Camera turn speed", 0.25, 3, 0.05);
-	AddChoice(TAB_CAMERA, 2, "invert", "Invert mouse", "Off|On");
-	AddChoice(TAB_CAMERA, 3, "smooth", "Mouse smoothing", "Off|On");
-	AddSlider(TAB_CAMERA, 4, "camdist", "Camera distance", 0.6, 1.6, 0.05);
-	AddChoice(TAB_CAMERA, 5, "shake", "Camera shake", "Off|Low|Normal|High");
-	AddChoice(TAB_CAMERA, 6, "autocam", "Auto camera (movement)", "Off|On");
-
-	// keys
-	AddKey(0, "MoveForward", "Forward");
-	AddKey(1, "MoveBackward", "Backward");
-	AddKey(2, "StrafeLeft", "Strafe left");
-	AddKey(3, "StrafeRight", "Strafe right");
-	AddKey(4, "MSMSwing", "Swing / parkour / wall run");
-	AddKey(5, "MSMJump", "Jump / release");
-	AddKey(6, "MSMAttack", "Attack");
-	AddKey(7, "MSMWeb", "Web shot / pull");
-	AddKey(8, "MSMDodge", "Dodge / dive");
-	AddKey(9, "MSMZip", "Web zip");
-	AddKey(10, "MSMPerch", "Point launch");
-	AddKey(11, "MSMFinisher", "Finisher");
-	AddKey(12, "MSMUse", "Legacy context action");
-	AddKey(13, "ShowStatus", "Status screen");
-
-	// reflections
-	AddChoice(TAB_REFLECT, 0, "refl", "Live reflections", "Off|On");
-	AddChoice(TAB_REFLECT, 1, "mirror", "Mirror reflection (nearby facades)", "Off|On");
+	BuildRows();
 
 	Note = NewLabel("", 0.10, 0.79, 0.80, 0.04, DimColor);
 	BtnBack = NewButton("BACK", 0.09, 0.85, 0.16, 0.05);
@@ -445,37 +476,74 @@ function string BoolStr(bool B)
 //-----------------------------------------------------------------------------
 // resolutions
 
+// Refresh rates up to what the monitor offers ("Auto" = the fastest it has)
+function BuildRefreshLists()
+{
+	local int All[9], i, Max;
+
+	All[0] = 60; All[1] = 75; All[2] = 100; All[3] = 120; All[4] = 144;
+	All[5] = 165; All[6] = 180; All[7] = 240; All[8] = 360;
+	Max = class'MSMDisplayInfo'.default.MaxRefresh;
+	RefreshVals = "0";
+	if (Max > 0)
+		RefreshLabels = "Highest (" $ Max $ " Hz)";
+	else
+		RefreshLabels = "Highest";
+	for (i = 0; i < 9; i++)
+		if (Max <= 0 || All[i] <= Max)
+		{
+			RefreshVals = RefreshVals $ "|" $ All[i];
+			RefreshLabels = RefreshLabels $ "|" $ All[i] $ " Hz";
+		}
+}
+
 function string ResolutionOptions()
 {
-	local string Cand[18], Cur, Opts;
+	local string Cand[30], Cur, Opts;
 	local int i, W, H, P;
 
 	Cand[0] = "800x600";
 	Cand[1] = "1024x768";
-	Cand[2] = "1280x720";
-	Cand[3] = "1280x800";
-	Cand[4] = "1280x1024";
-	Cand[5] = "1366x768";
-	Cand[6] = "1440x900";
-	Cand[7] = "1600x900";
-	Cand[8] = "1600x1200";
-	Cand[9] = "1680x1050";
-	Cand[10] = "1920x1080";
-	Cand[11] = "1920x1200";
-	Cand[12] = "2560x1080";
-	Cand[13] = "2560x1440";
-	Cand[14] = "2560x1600";
-	Cand[15] = "3440x1440";
-	Cand[16] = "3840x1600";
-	Cand[17] = "3840x2160";
+	Cand[2] = "1152x864";
+	Cand[3] = "1280x720";
+	Cand[4] = "1280x800";
+	Cand[5] = "1280x960";
+	Cand[6] = "1280x1024";
+	Cand[7] = "1360x768";
+	Cand[8] = "1366x768";
+	Cand[9] = "1440x900";
+	Cand[10] = "1600x900";
+	Cand[11] = "1600x1200";
+	Cand[12] = "1680x1050";
+	Cand[13] = "1920x1080";
+	Cand[14] = "1920x1200";
+	Cand[15] = "1920x1440";
+	Cand[16] = "2048x1152";
+	Cand[17] = "2560x1080";
+	Cand[18] = "2560x1440";
+	Cand[19] = "2560x1600";
+	Cand[20] = "2560x1920";
+	Cand[21] = "3200x1800";
+	Cand[22] = "3440x1440";
+	Cand[23] = "3840x1080";
+	Cand[24] = "3840x1600";
+	Cand[25] = "3840x2160";
+	Cand[26] = "3840x2400";
+	Cand[27] = "5120x1440";
+	Cand[28] = "5120x2160";
+	Cand[29] = "5120x2880";
 
 	Cur = PlayerOwner().ConsoleCommand("GETCURRENTRES");
 	ResList.Length = 0;
-	for (i = 0; i < 18; i++)
+	for (i = 0; i < 30; i++)
 	{
 		P = InStr(Cand[i], "x");
 		W = int(Left(Cand[i], P));
 		H = int(Mid(Cand[i], P + 1));
+		// never above the monitor's resolution
+		if (class'MSMDisplayInfo'.default.DesktopWidth > 0 && Cand[i] != Cur &&
+			(W > class'MSMDisplayInfo'.default.DesktopWidth || H > class'MSMDisplayInfo'.default.DesktopHeight))
+			continue;
 		if (Cand[i] == Cur || PlayerOwner().ConsoleCommand("SUPPORTEDRESOLUTION WIDTH=" $ W $ " HEIGHT=" $ H $ " BITDEPTH=32") == "1")
 			ResList[ResList.Length] = Cand[i];
 	}
@@ -521,9 +589,15 @@ function LoadValues()
 	for (i = 0; i < ResList.Length && ResList[i] != Cur; i++) {}
 	SetChoice("res", i, true);
 	S = PlayerOwner().ConsoleCommand("ISFULLSCREEN");
-	SetChoice("mode", int(S ~= "true" || S == "1"), true);
+	i = int(S ~= "true" || S == "1");
+	if (i == 1 && class'MSMSettings'.default.bBorderless)
+		i = 2;
+	SetChoice("mode", i, true);
+	SetChoice("refresh", IndexOfInt(class'MSMSettings'.default.RefreshRate, RefreshVals, 0), true);
 	SetChoice("vsync", int(class'MSMSettings'.default.bVSync), true);
-	SetChoice("fps", IndexOfInt(class'MSMSettings'.default.FrameLimit, "0|30|60|75|120|144|165|240", 0), true);
+	SetChoice("fps", IndexOfInt(class'MSMSettings'.default.FrameLimit, "0|-1|30|60|75|120|144|165|240", 0), true);
+	SetChoice("adapter", IndexOfInt(class'MSMSettings'.default.Adapter, "-1|0|1|2|3", 0), true);
+	SetChoice("crowd", class'MSMSettings'.default.CrowdDensity, true);
 	SetSlider("fov", class'MSMSettings'.default.FOV, true);
 	SetSlider("gamma", float(Ini("Engine.Engine.ViewportManager Gamma")), true);
 	SetSlider("bright", float(Ini("Engine.Engine.ViewportManager Brightness")), true);
@@ -556,6 +630,10 @@ function LoadValues()
 	SetChoice("projectors", int(IniBool("Engine.Engine.ViewportManager Projectors")), true);
 	SetChoice("decals", int(IniBool("Engine.Engine.ViewportManager Decals")), true);
 	SetChoice("coronas", int(IniBool("Engine.Engine.ViewportManager Coronas")), true);
+	SetChoice("postaa", class'MSMSettings'.default.PostAA, true);
+	SetChoice("sharpen", class'MSMSettings'.default.Sharpen, true);
+	SetChoice("mipbias", class'MSMSettings'.default.MipBias, true);
+	SetChoice("drawdist", class'MSMSettings'.default.DrawDistance, true);
 
 	// camera and mouse
 	SetSlider("mousesens", float(PlayerOwner().ConsoleCommand("get PlayerInput MouseSensitivity")), true);
@@ -710,7 +788,7 @@ function ShowTab(int T)
 	switch (T)
 	{
 		case TAB_DISPLAY: Note.Caption = "Left click: next option, right click: previous. Changes take effect with APPLY."; break;
-		case TAB_GRAPHICS: Note.Caption = "The screen is briefly re-created when MSAA or VSync is applied."; break;
+		case TAB_GRAPHICS: Note.Caption = "The screen is briefly re-created when MSAA, VSync or the refresh rate is applied. FXAA and sharpening are live."; break;
 		case TAB_CAMERA: Note.Caption = "Camera settings apply to the Marvel's Spider-Man style camera."; break;
 		case TAB_KEYS: Note.Caption = "Click an action, then press the new key (Esc: cancel). Keys are saved immediately."; break;
 		case TAB_REFLECT: Note.Caption = "If live reflections are off, the game's old static reflections are used."; break;
@@ -811,8 +889,11 @@ function ResetTab()
 	switch (CurTab)
 	{
 		case TAB_DISPLAY:
+			SetChoice("refresh", 0);
 			SetChoice("vsync", 0);
 			SetChoice("fps", 0);
+			SetChoice("adapter", 0);
+			SetChoice("crowd", 4);
 			SetSlider("fov", 65);
 			SetSlider("gamma", 0.8);
 			SetSlider("bright", 0.8);
@@ -830,6 +911,10 @@ function ResetTab()
 			SetChoice("projectors", 1);
 			SetChoice("decals", 1);
 			SetChoice("coronas", 1);
+			SetChoice("postaa", 0);
+			SetChoice("sharpen", 0);
+			SetChoice("mipbias", 0);
+			SetChoice("drawdist", 2);
 			break;
 		case TAB_CAMERA:
 			SetSlider("mousesens", 3);
@@ -887,9 +972,17 @@ function ApplyAll()
 	local MSMSpideyController C;
 
 	// MSM settings (the loader re-reads them every 2 s; MSAA/VSync on the next device reset)
-	bReset = Changed("msaa") || Changed("vsync");
+	bReset = Changed("msaa") || Changed("vsync") || Changed("refresh");
 	class'MSMSettings'.default.bVSync = GetChoice("vsync") == 1;
-	class'MSMSettings'.default.FrameLimit = int(GetOpt("0|30|60|75|120|144|165|240", GetChoice("fps")));
+	class'MSMSettings'.default.FrameLimit = int(GetOpt("0|-1|30|60|75|120|144|165|240", GetChoice("fps")));
+	class'MSMSettings'.default.RefreshRate = int(GetOpt(RefreshVals, GetChoice("refresh")));
+	class'MSMSettings'.default.bBorderless = GetChoice("mode") == 2;
+	class'MSMSettings'.default.Adapter = int(GetOpt("-1|0|1|2|3", GetChoice("adapter")));
+	class'MSMSettings'.default.PostAA = GetChoice("postaa");
+	class'MSMSettings'.default.CrowdDensity = GetChoice("crowd");
+	class'MSMSettings'.default.Sharpen = GetChoice("sharpen");
+	class'MSMSettings'.default.MipBias = GetChoice("mipbias");
+	class'MSMSettings'.default.DrawDistance = GetChoice("drawdist");
 	class'MSMSettings'.default.FOV = GetSlider("fov");
 	class'MSMSettings'.default.MSAA = int(GetOpt("0|2|4|8", GetChoice("msaa")));
 	class'MSMSettings'.default.Anisotropy = int(GetOpt("1|2|4|8|16", GetChoice("aniso")));
@@ -975,7 +1068,7 @@ function ApplyAll()
 	if (bResChange || bReset)
 	{
 		Res = ResList[GetChoice("res")];
-		if (GetChoice("mode") == 1)
+		if (GetChoice("mode") >= 1)
 			Res = Res $ "x32f";
 		else
 			Res = Res $ "x32w";
@@ -989,6 +1082,7 @@ function ApplyAll()
 defaultproperties
 {
 	PageName="MSMPageSettings"
+	PageTitle="SETTINGS"
 	bRequire640x480=false
 	bRenderWorld=true
 	bPauseIfPossible=true
